@@ -69,8 +69,8 @@ jobs:
                   applicationId = "com.khang.pad2stretcher"
                   minSdk = 26
                   targetSdk = 34
-                  versionCode = 1
-                  versionName = "1.0"
+                  versionCode = 2
+                  versionName = "1.1"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -124,7 +124,6 @@ jobs:
           import android.os.Bundle
           import android.os.Handler
           import android.os.Looper
-          import android.view.Gravity
           import android.widget.*
           import rikka.shizuku.Shizuku
           import java.io.BufferedReader
@@ -139,8 +138,9 @@ jobs:
               private val NATIVE_DPI = 400
               private val SHIZUKU_CODE = 1001
 
-              private var stretchPx = 8
-              private var sharpnessPct = 112
+              // Đã cộng thêm 20 pixels (từ 8 lên 28 pixels mặc định, hỗ trợ kéo lên tới 50 pixels)
+              private var stretchPx = 28
+              private var sharpnessPct = 115
               private var delaySec = 12
               private var isRunning = false
               private val handler = Handler(Looper.getMainLooper())
@@ -169,7 +169,7 @@ jobs:
                   scroll.addView(root)
 
                   val title = TextView(this).apply {
-                      text = "OPPO Pad 2 — PUBG Stretch & SuperRes"
+                      text = "OPPO Pad 2 — PUBG Stretch (+28px ~ 50px)"
                       textSize = 22f
                       setTypeface(null, Typeface.BOLD)
                       setTextColor(Color.parseColor("#00E676"))
@@ -188,17 +188,17 @@ jobs:
                   }
                   root.addView(infoText)
 
-                  root.addView(makeLabel("1. Độ kéo dãn ngang nhân vật (0 - 20 pixels):"))
+                  root.addView(makeLabel("1. Độ kéo dãn ngang nhân vật (0 - 50 pixels):"))
                   val stretchBar = SeekBar(this).apply {
-                      max = 20
+                      max = 50
                       progress = stretchPx
                       setOnSeekBarChangeListener(simpleSeek { stretchPx = it; updatePreview() })
                   }
                   root.addView(stretchBar)
 
-                  root.addView(makeLabel("2. Độ nét chống vỡ hình Supersampling (100% - 125%):"))
+                  root.addView(makeLabel("2. Độ nét chống vỡ hình Supersampling (100% - 130%):"))
                   val sharpBar = SeekBar(this).apply {
-                      max = 25
+                      max = 30
                       progress = sharpnessPct - 100
                       setOnSeekBarChangeListener(simpleSeek { sharpnessPct = 100 + it; updatePreview() })
                   }
@@ -247,7 +247,7 @@ jobs:
                   val dpi = (NATIVE_DPI * scale).roundToInt()
 
                   infoText.text = "• Độ phân giải gốc: 2000x2800 (DPI 400)\n" +
-                          "• Độ phân giải Siêu nét (${sharpnessPct}%): ${upW}x${upH} (DPI $dpi)\n" +
+                          "• Độ phân giải Siêu nét (${sharpnessPct}\%):${upW}x${upH} (DPI$dpi)\n" +
                           "• Khung nhìn khởi tạo UE4: ${upW}x${preH}\n" +
                           "• Độ to ngang nhân vật: +${stretchPx} pixels\n" +
                           "• Đếm ngược bung toàn màn hình: ${delaySec} giây"
@@ -263,108 +263,5 @@ jobs:
 
                   thread {
                       isRunning = true
-                      val r1 = runShizuku("wm size ${upW}x${preH} && wm density $dpi")
-                      runShizuku("monkey -p com.vng.pubgmobile -c android.intent.category.LAUNCHER 1 || monkey -p com.tencent.ig -c android.intent.category.LAUNCHER 1")
-
-                      for (i in delaySec downTo 1) {
-                          handler.post {
-                              statusText.text = "Đang khóa khung hình UE4... Tự động bung tràn viền sau $i giây\n($r1)"
-                          }
-                          Thread.sleep(1000)
-                      }
-                      val r2 = runShizuku("wm size ${upW}x${upH}")
-                      handler.post {
-                          statusText.text = "Hoàn tất! Đã kéo dãn +${stretchPx}px ở độ phân giải siêu nét ${upW}x${upH}.\n$r2"
-                          isRunning = false
-                      }
-                  }
-              }
-
-              private fun applyImmediate() {
-                  val scale = sharpnessPct / 100f
-                  val upW = (NATIVE_WIDTH * scale).roundToInt()
-                  val upH = (NATIVE_HEIGHT * scale).roundToInt()
-                  val preH = upH - (stretchPx * 16)
-                  val dpi = (NATIVE_DPI * scale).roundToInt()
-                  thread {
-                      val res = runShizuku("wm size ${upW}x${preH} && wm density $dpi")
-                      handler.post { statusText.text = "Đã áp dụng ${upW}x${preH} (DPI $dpi):\n$res" }
-                  }
-              }
-
-              private fun resetDefault() {
-                  thread {
-                      isRunning = false
-                      val res = runShizuku("wm size reset && wm density reset")
-                      handler.post { statusText.text = "Đã khôi phục về mặc định (2000x2800, DPI 400):\n$res" }
-                  }
-              }
-
-              private fun runShizuku(cmd: String): String {
-                  return try {
-                      if (!Shizuku.pingBinder()) return "Lỗi: Shizuku chưa được bật!"
-                      if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-                          Shizuku.requestPermission(SHIZUKU_CODE)
-                          return "Hãy bấm Cho phép quyền Shizuku trên màn hình!"
-                      }
-                      val m = Shizuku::class.java.getDeclaredMethod(
-                          "newProcess",
-                          Array<String>::class.java,
-                          Array<String>::class.java,
-                          String::class.java
-                      )
-                      m.isAccessible = true
-                      val p = m.invoke(null, arrayOf("sh", "-c", cmd), null, null) as Process
-                      val out = BufferedReader(InputStreamReader(p.inputStream)).readText()
-                      p.waitFor()
-                      out.ifEmpty { "Thực thi thành công: $cmd" }
-                  } catch (e: Exception) {
-                      "Lỗi: ${e.message}"
-                  }
-              }
-
-              private fun makeLabel(txt: String) = TextView(this).apply {
-                  text = txt
-                  textSize = 15f
-                  setTextColor(Color.WHITE)
-                  setPadding(0, 36, 0, 12)
-              }
-
-              private fun makeButton(txt: String, hex: String, action: () -> Unit) = Button(this).apply {
-                  text = txt
-                  setTextColor(Color.WHITE)
-                  setTypeface(null, Typeface.BOLD)
-                  background = GradientDrawable().apply {
-                      setColor(Color.parseColor(hex))
-                      cornerRadius = 20f
-                  }
-                  val lp = LinearLayout.LayoutParams(
-                      LinearLayout.LayoutParams.MATCH_PARENT,
-                      LinearLayout.LayoutParams.WRAP_CONTENT
-                  ).apply { topMargin = 28 }
-                  layoutParams = lp
-                  setOnClickListener { action() }
-              }
-
-              private fun simpleSeek(onChange: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {
-                  override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) = onChange(p)
-                  override fun onStartTrackingTouch(s: SeekBar?) {}
-                  override fun onStopTrackingTouch(s: SeekBar?) {}
-              }
-
-              override fun onDestroy() {
-                  super.onDestroy()
-                  Shizuku.removeRequestPermissionResultListener(permissionListener)
-              }
-          }
-          EOF
-
-      - name: Biên dịch file APK
-        run: gradle assembleDebug
-
-      - name: Đóng gói file APK để tải về
-        uses: actions/upload-artifact@v4
-        with:
-          name: Pad2-PUBG-Stretcher-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
-          
+                      val r1 = runShizuku("
+                      
