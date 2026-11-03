@@ -1,0 +1,370 @@
+name: Build OPPO Pad 2 Stretcher APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cài đặt JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Cài đặt Gradle 8.6
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.6'
+
+      - name: Tự động khởi tạo toàn bộ mã nguồn ứng dụng
+        run: |
+          mkdir -p app/src/main/java/com/khang/pad2stretcher
+
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          EOF
+
+          cat << 'EOF' > settings.gradle.kts
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url = uri("https://jitpack.io") }
+              }
+          }
+          rootProject.name = "Pad2Stretcher"
+          include(":app")
+          EOF
+
+          cat << 'EOF' > build.gradle.kts
+          plugins {
+              id("com.android.application") version "8.2.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.22" apply false
+          }
+          EOF
+
+          cat << 'EOF' > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "com.khang.pad2stretcher"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.khang.pad2stretcher"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          dependencies {
+              implementation("dev.rikka.shizuku:api:13.1.5")
+              implementation("dev.rikka.shizuku:provider:13.1.5")
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:allowBackup="true"
+                  android:label="Pad 2 PUBG Stretcher"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <provider
+                      android:name="rikka.shizuku.ShizukuProvider"
+                      android:authorities="${applicationId}.shizuku"
+                      android:enabled="true"
+                      android:exported="true"
+                      android:multiprocess="false"
+                      android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+              </application>
+          </manifest>
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/khang/pad2stretcher/MainActivity.kt
+          package com.khang.pad2stretcher
+
+          import android.app.Activity
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.os.Bundle
+          import android.os.Handler
+          import android.os.Looper
+          import android.view.Gravity
+          import android.widget.*
+          import rikka.shizuku.Shizuku
+          import java.io.BufferedReader
+          import java.io.InputStreamReader
+          import kotlin.concurrent.thread
+          import kotlin.math.roundToInt
+
+          class MainActivity : Activity() {
+
+              private val NATIVE_WIDTH = 2000
+              private val NATIVE_HEIGHT = 2800
+              private val NATIVE_DPI = 400
+              private val SHIZUKU_CODE = 1001
+
+              private var stretchPx = 8
+              private var sharpnessPct = 112
+              private var delaySec = 12
+              private var isRunning = false
+              private val handler = Handler(Looper.getMainLooper())
+
+              private lateinit var infoText: TextView
+              private lateinit var statusText: TextView
+
+              private val permissionListener = Shizuku.OnRequestPermissionResultListener { code, res ->
+                  if (code == SHIZUKU_CODE) {
+                      val ok = res == PackageManager.PERMISSION_GRANTED
+                      Toast.makeText(this, if (ok) "Đã cấp quyền Shizuku!" else "Từ chối quyền Shizuku!", Toast.LENGTH_SHORT).show()
+                  }
+              }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  Shizuku.addRequestPermissionResultListener(permissionListener)
+
+                  val scroll = ScrollView(this).apply {
+                      setBackgroundColor(Color.parseColor("#121212"))
+                  }
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(48, 48, 48, 48)
+                  }
+                  scroll.addView(root)
+
+                  val title = TextView(this).apply {
+                      text = "OPPO Pad 2 — PUBG Stretch & SuperRes"
+                      textSize = 22f
+                      setTypeface(null, Typeface.BOLD)
+                      setTextColor(Color.parseColor("#00E676"))
+                      setPadding(0, 0, 0, 32)
+                  }
+                  root.addView(title)
+
+                  infoText = TextView(this).apply {
+                      textSize = 15f
+                      setTextColor(Color.WHITE)
+                      setPadding(36, 36, 36, 36)
+                      background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#1E1E1E"))
+                          cornerRadius = 24f
+                      }
+                  }
+                  root.addView(infoText)
+
+                  root.addView(makeLabel("1. Độ kéo dãn ngang nhân vật (0 - 20 pixels):"))
+                  val stretchBar = SeekBar(this).apply {
+                      max = 20
+                      progress = stretchPx
+                      setOnSeekBarChangeListener(simpleSeek { stretchPx = it; updatePreview() })
+                  }
+                  root.addView(stretchBar)
+
+                  root.addView(makeLabel("2. Độ nét chống vỡ hình Supersampling (100% - 125%):"))
+                  val sharpBar = SeekBar(this).apply {
+                      max = 25
+                      progress = sharpnessPct - 100
+                      setOnSeekBarChangeListener(simpleSeek { sharpnessPct = 100 + it; updatePreview() })
+                  }
+                  root.addView(sharpBar)
+
+                  root.addView(makeLabel("3. Thời gian chờ khóa khung hình UE4 (5 - 25 giây):"))
+                  val delayBar = SeekBar(this).apply {
+                      max = 20
+                      progress = delaySec - 5
+                      setOnSeekBarChangeListener(simpleSeek { delaySec = 5 + it; updatePreview() })
+                  }
+                  root.addView(delayBar)
+
+                  val btnApply = makeButton("VÀO GAME & TỰ ĐỘNG KÉO DÃN + TĂNG NÉT", "#00C853") {
+                      startStretchSequence()
+                  }
+                  root.addView(btnApply)
+
+                  val btnDirect = makeButton("CHỈ ÁP DỤNG TỈ LỆ & ĐỘ NÉT NGAY", "#2979FF") {
+                      applyImmediate()
+                  }
+                  root.addView(btnDirect)
+
+                  val btnReset = makeButton("KHÔI PHỤC MÀN HÌNH GỐC (2000x2800 - DPI 400)", "#FF5252") {
+                      resetDefault()
+                  }
+                  root.addView(btnReset)
+
+                  statusText = TextView(this).apply {
+                      text = "Trạng thái: Sẵn sàng. Hãy bật Shizuku trước khi bấm."
+                      textSize = 14f
+                      setTextColor(Color.LTGRAY)
+                      setPadding(0, 32, 0, 0)
+                  }
+                  root.addView(statusText)
+
+                  updatePreview()
+                  setContentView(scroll)
+              }
+
+              private fun updatePreview() {
+                  val scale = sharpnessPct / 100f
+                  val upW = (NATIVE_WIDTH * scale).roundToInt()
+                  val upH = (NATIVE_HEIGHT * scale).roundToInt()
+                  val preH = upH - (stretchPx * 16)
+                  val dpi = (NATIVE_DPI * scale).roundToInt()
+
+                  infoText.text = "• Độ phân giải gốc: 2000x2800 (DPI 400)\n" +
+                          "• Độ phân giải Siêu nét (${sharpnessPct}%): ${upW}x${upH} (DPI $dpi)\n" +
+                          "• Khung nhìn khởi tạo UE4: ${upW}x${preH}\n" +
+                          "• Độ to ngang nhân vật: +${stretchPx} pixels\n" +
+                          "• Đếm ngược bung toàn màn hình: ${delaySec} giây"
+              }
+
+              private fun startStretchSequence() {
+                  if (isRunning) return
+                  val scale = sharpnessPct / 100f
+                  val upW = (NATIVE_WIDTH * scale).roundToInt()
+                  val upH = (NATIVE_HEIGHT * scale).roundToInt()
+                  val preH = upH - (stretchPx * 16)
+                  val dpi = (NATIVE_DPI * scale).roundToInt()
+
+                  thread {
+                      isRunning = true
+                      val r1 = runShizuku("wm size ${upW}x${preH} && wm density $dpi")
+                      runShizuku("monkey -p com.vng.pubgmobile -c android.intent.category.LAUNCHER 1 || monkey -p com.tencent.ig -c android.intent.category.LAUNCHER 1")
+
+                      for (i in delaySec downTo 1) {
+                          handler.post {
+                              statusText.text = "Đang khóa khung hình UE4... Tự động bung tràn viền sau $i giây\n($r1)"
+                          }
+                          Thread.sleep(1000)
+                      }
+                      val r2 = runShizuku("wm size ${upW}x${upH}")
+                      handler.post {
+                          statusText.text = "Hoàn tất! Đã kéo dãn +${stretchPx}px ở độ phân giải siêu nét ${upW}x${upH}.\n$r2"
+                          isRunning = false
+                      }
+                  }
+              }
+
+              private fun applyImmediate() {
+                  val scale = sharpnessPct / 100f
+                  val upW = (NATIVE_WIDTH * scale).roundToInt()
+                  val upH = (NATIVE_HEIGHT * scale).roundToInt()
+                  val preH = upH - (stretchPx * 16)
+                  val dpi = (NATIVE_DPI * scale).roundToInt()
+                  thread {
+                      val res = runShizuku("wm size ${upW}x${preH} && wm density $dpi")
+                      handler.post { statusText.text = "Đã áp dụng ${upW}x${preH} (DPI $dpi):\n$res" }
+                  }
+              }
+
+              private fun resetDefault() {
+                  thread {
+                      isRunning = false
+                      val res = runShizuku("wm size reset && wm density reset")
+                      handler.post { statusText.text = "Đã khôi phục về mặc định (2000x2800, DPI 400):\n$res" }
+                  }
+              }
+
+              private fun runShizuku(cmd: String): String {
+                  return try {
+                      if (!Shizuku.pingBinder()) return "Lỗi: Shizuku chưa được bật!"
+                      if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                          Shizuku.requestPermission(SHIZUKU_CODE)
+                          return "Hãy bấm Cho phép quyền Shizuku trên màn hình!"
+                      }
+                      val m = Shizuku::class.java.getDeclaredMethod(
+                          "newProcess",
+                          Array<String>::class.java,
+                          Array<String>::class.java,
+                          String::class.java
+                      )
+                      m.isAccessible = true
+                      val p = m.invoke(null, arrayOf("sh", "-c", cmd), null, null) as Process
+                      val out = BufferedReader(InputStreamReader(p.inputStream)).readText()
+                      p.waitFor()
+                      out.ifEmpty { "Thực thi thành công: $cmd" }
+                  } catch (e: Exception) {
+                      "Lỗi: ${e.message}"
+                  }
+              }
+
+              private fun makeLabel(txt: String) = TextView(this).apply {
+                  text = txt
+                  textSize = 15f
+                  setTextColor(Color.WHITE)
+                  setPadding(0, 36, 0, 12)
+              }
+
+              private fun makeButton(txt: String, hex: String, action: () -> Unit) = Button(this).apply {
+                  text = txt
+                  setTextColor(Color.WHITE)
+                  setTypeface(null, Typeface.BOLD)
+                  background = GradientDrawable().apply {
+                      setColor(Color.parseColor(hex))
+                      cornerRadius = 20f
+                  }
+                  val lp = LinearLayout.LayoutParams(
+                      LinearLayout.LayoutParams.MATCH_PARENT,
+                      LinearLayout.LayoutParams.WRAP_CONTENT
+                  ).apply { topMargin = 28 }
+                  layoutParams = lp
+                  setOnClickListener { action() }
+              }
+
+              private fun simpleSeek(onChange: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {
+                  override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) = onChange(p)
+                  override fun onStartTrackingTouch(s: SeekBar?) {}
+                  override fun onStopTrackingTouch(s: SeekBar?) {}
+              }
+
+              override fun onDestroy() {
+                  super.onDestroy()
+                  Shizuku.removeRequestPermissionResultListener(permissionListener)
+              }
+          }
+          EOF
+
+      - name: Biên dịch file APK
+        run: gradle assembleDebug
+
+      - name: Đóng gói file APK để tải về
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pad2-PUBG-Stretcher-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          
